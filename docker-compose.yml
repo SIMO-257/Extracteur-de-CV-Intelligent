@@ -1,0 +1,191 @@
+
+# services:
+#   api:
+#     build:
+#       context: ./api
+#     depends_on:
+#       - mongodb
+#       - minio
+#       - ollama
+#     ports:
+#       - "5000:5000"
+#     environment:
+#       - MONGODB_URI=mongodb://mongodb:27017/cv_analysis
+#       - OLLAMA_HOST=http://ollama:11434
+#     volumes:
+#       - ./api:/app
+
+#   frontend:
+#     build:
+#       context: ./frontend
+#     ports:
+#       - "5173:5173"
+#     environment:
+#       - VITE_API_URL=http://localhost:5000
+#     volumes:
+#       - ./frontend:/app
+#       - /app/node_modules
+
+#   mongodb:
+#     image: mongo:latest
+#     ports:
+#       - "27017:27017"
+
+#   minio:
+#     image: minio/minio
+#     container_name: minio
+#     ports:
+#       - "9000:9000"
+#       - "9001:9001"
+#     environment:
+#       - MINIO_ROOT_USER=minioadmin
+#       - MINIO_ROOT_PASSWORD=minioadmin
+#     command: server /data --console-address ":9001"
+#     volumes:
+#       - minio_data:/data
+
+#   ollama:
+#     image: ollama/ollama:latest
+#     ports:
+#       - "11434:11434"
+
+# # --- Add this section at the bottom ---
+# volumes:
+#   minio_data:
+# services:
+#   api:
+#     build:
+#       context: ./api
+#     depends_on:
+#       - mongodb
+#       - minio
+#       - ollama
+#     ports:
+#       - "5000:5000"
+#     environment:
+#       # Tell the API to look for 'mongodb' service, not localhost
+#       - MONGODB_URI=mongodb://mongodb:27017/cv_analysis
+#       # Tell the API to look for the 'ollama' service container
+#       - OLLAMA_HOST=http://ollama:11434
+#     volumes:
+#       - ./api:/app
+
+#   frontend:
+#     build:
+#       context: ./frontend
+#     ports:
+#       - "5173:5173"
+#     environment:
+#       # This tells Vite where the API is located from the browser's perspective
+#       - VITE_API_URL=http://localhost:5000
+#     volumes:
+#       - ./frontend:/app
+#       - /app/node_modules
+
+#   mongodb:
+#     image: mongo:latest
+#     ports:
+#       - "27017:27017"
+
+#   minio:
+#     image: minio/minio
+#     container_name: minio
+#     ports:
+#       - "9000:9000"
+#       - "9001:9001"
+#     environment:
+#       MINIO_ROOT_USER: minioadmin
+#       MINIO_ROOT_PASSWORD: minioadmin
+#     volumes:
+#       - minio_data:/data
+
+
+#   ollama:
+#     image: ollama/ollama:latest
+#     ports:
+#       - "11434:11434"
+services:
+  api:
+    build:
+      context: ./api
+    depends_on:
+      - mongodb
+      - minio
+      - ollama
+    ports:
+      - "5000:5000"
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/cv_analysis
+      - OLLAMA_HOST=http://ollama:11434
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+    volumes:
+      - ./api:/app
+      - /app/node_modules
+    networks:
+      - app-network
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:5000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - app-network
+    depends_on:
+      - api
+
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - app-network
+
+  minio:
+    image: minio/minio
+    container_name: minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    networks:
+      - app-network
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - app-network
+    # Uncomment the following to auto-pull model on startup
+    # entrypoint: ["/bin/sh", "-c"]
+    # command:
+    #   - |
+    #     ollama serve &
+    #     sleep 5
+    #     ollama pull llama3.2:latest
+    #     wait
+
+volumes:
+  mongodb_data:
+  minio_data:
+  ollama_data:
+
+networks:
+  app-network:
+    driver: bridge
