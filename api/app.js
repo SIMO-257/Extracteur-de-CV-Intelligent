@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const { connectDB} = require('./db');
 const cvRoutes = require('./Routes/cvRoutes');
+const authRoutes = require('./Routes/authRoutes');
 
 const app = express();
 
@@ -13,6 +14,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 app.use('/api/cv', cvRoutes);
+app.use('/api/auth', authRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

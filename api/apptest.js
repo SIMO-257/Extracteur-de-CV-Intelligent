@@ -1,7 +1,7 @@
 const http = require('http');
 
 const data = JSON.stringify({
-  model: 'llama3.2:latest',
+  model: process.env.OLLAMA_MODEL || 'llama3.2:latest',
   prompt: 'Say hello in one word',
   stream: false
 });

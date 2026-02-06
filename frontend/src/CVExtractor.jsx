@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import "./CVExtractor.css";
+import "./styles/CVExtractor.css";
 
 // Use environment variable for API URL (works in Docker)
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";

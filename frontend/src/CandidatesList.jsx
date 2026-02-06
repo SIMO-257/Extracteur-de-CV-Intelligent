@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import "./CVExtractor.css"; // Reusing existing styles for consistency
+import "./styles/CVExtractor.css"; // Reusing existing styles for consistency
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
@@ -69,6 +69,27 @@ const CandidatesList = () => {
     }
   };
 
+  const handleEnableForm = async (id) => {
+    try {
+      const response = await fetch(`${API_URL}/api/cv/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ formStatus: "active" }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        const updatedCandidate = data.data;
+        setCandidates((prev) =>
+          prev.map((c) => (c._id === id ? updatedCandidate : c)),
+        );
+        const link = `${window.location.origin}/form/${updatedCandidate.formToken}`;
+        alert(`Accès activé ! \nLien à envoyer au candidat : \n${link}`);
+      }
+    } catch (err) {
+      console.error("Failed to enable form", err);
+    }
+  };
+
   const handleStatusChange = async (id, newStatus) => {
     try {
       await fetch(`${API_URL}/api/cv/${id}`, {
@@ -96,19 +117,50 @@ const CandidatesList = () => {
         className="cv-extractor-card"
         style={{ maxWidth: "1400px", display: "block" }}
       >
-        <div className="header">
+        <div
+          className="header"
+          style={{ marginBottom: "2rem", flexWrap: "wrap" }}
+        >
           <h1>👥 Liste des Candidats</h1>
-          <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: "1rem",
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            <Link
+              to="/scan"
+              className="view-list-link"
+              style={{ fontSize: "0.85rem", background: "#3182ce" }}
+            >
+              🚀 Scanner CV
+            </Link>
             <Link
               to="/refused"
               className="view-list-link"
-              style={{ fontSize: "0.9rem" }}
+              style={{ fontSize: "0.85rem" }}
             >
-              🚫 Voir les Refusés
+              🚫 Refusés
             </Link>
-            <Link to="/" className="back-link">
-              ← Retour
-            </Link>
+            <button
+              onClick={() => {
+                localStorage.removeItem("isAdminLoggedIn");
+                window.location.href = "/login";
+              }}
+              className="view-list-link"
+              style={{
+                background: "#e53e3e",
+                border: "none",
+                color: "white",
+                fontSize: "0.85rem",
+                cursor: "pointer",
+                padding: "8px 12px",
+              }}
+            >
+              🚪 Déconnexion
+            </button>
           </div>
         </div>
 
@@ -131,6 +183,8 @@ const CandidatesList = () => {
                 <th>Commentaire</th>
                 <th>Statut</th>
                 <th>CV</th>
+                <th>Selection</th>
+                <th>Formulaire</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -224,6 +278,38 @@ const CandidatesList = () => {
                           </a>
                         ) : (
                           <span className="no-file">Aucun</span>
+                        )}
+                      </td>
+                      <td>
+                        <button
+                          onClick={() => handleEnableForm(candidate._id)}
+                          className="extract-button"
+                          style={{
+                            padding: "8px 12px",
+                            fontSize: "0.85rem",
+                            background:
+                              candidate.formStatus === "active"
+                                ? "#48bb78"
+                                : "",
+                          }}
+                        >
+                          {candidate.formStatus === "active"
+                            ? "✅ Activé"
+                            : "📋 Choisir"}
+                        </button>
+                      </td>
+                      <td>
+                        {candidate.qualifiedFormPath ? (
+                          <a
+                            href={candidate.qualifiedFormPath}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="download-link"
+                          >
+                            📝 Form PDF
+                          </a>
+                        ) : (
+                          <span className="no-file">-</span>
                         )}
                       </td>
                       <td>

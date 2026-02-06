@@ -6,6 +6,9 @@ const axios = require('axios');
 const path = require('path');
 const { Client } = require('minio');
 const { getDB } = require('../db');
+const PDFDocument = require('pdfkit');
+const fs = require('fs');
+const { PassThrough } = require('stream');
 
 
 // MinIO Client
@@ -17,45 +20,45 @@ const minioClient = new Client({
     secretKey: process.env.MINIO_SECRET_KEY || 'minioadmin'
 });
 
-// Ensure bucket exists and has public read policy
+// Ensure buckets exist and have public read policy
+const BUCKETS = ['cvs', 'qualified-candidats'];
 const BUCKET_NAME = 'cvs';
-minioClient.bucketExists(BUCKET_NAME, (err, exists) => {
-    if (err) {
-        console.error('Error checking bucket:', err);
-    } else {
-        const policy = {
-            Version: '2012-10-17',
-            Statement: [
-                {
+
+BUCKETS.forEach(bucket => {
+    minioClient.bucketExists(bucket, (err, exists) => {
+        if (err) {
+            console.error(`Error checking bucket "${bucket}":`, err);
+        } else {
+            const policy = {
+                Version: '2012-10-17',
+                Statement: [{
                     Effect: 'Allow',
                     Principal: { AWS: ['*'] },
                     Action: ['s3:GetObject'],
-                    Resource: [`arn:aws:s3:::${BUCKET_NAME}/*`]
-                }
-            ]
-        };
+                    Resource: [`arn:aws:s3:::${bucket}/*`]
+                }]
+            };
 
-        if (!exists) {
-            minioClient.makeBucket(BUCKET_NAME, 'us-east-1', (err) => {
-                if (err) console.error('Error creating bucket:', err);
-                else {
-                    console.log('✅ Bucket "cvs" created successfully');
-                    // Set policy
-                    minioClient.setBucketPolicy(BUCKET_NAME, JSON.stringify(policy), (err) => {
-                        if (err) console.error('Error setting bucket policy:', err);
-                        else console.log('✅ Bucket policy set to PUBLIC READ');
-                    });
-                }
-            });
-        } else {
-            console.log('✅ Bucket "cvs" already exists');
-             // Always ensure policy on restart
-             minioClient.setBucketPolicy(BUCKET_NAME, JSON.stringify(policy), (err) => {
-                if (err) console.error('Error setting bucket policy:', err);
-                else console.log('✅ Bucket policy set to PUBLIC READ');
-            });
+            if (!exists) {
+                minioClient.makeBucket(bucket, 'us-east-1', (err) => {
+                    if (err) console.error(`Error creating bucket "${bucket}":`, err);
+                    else {
+                        console.log(`✅ Bucket "${bucket}" created successfully`);
+                        minioClient.setBucketPolicy(bucket, JSON.stringify(policy), (err) => {
+                            if (err) console.error(`Error setting policy for "${bucket}":`, err);
+                            else console.log(`✅ Policy set for "${bucket}"`);
+                        });
+                    }
+                });
+            } else {
+                console.log(`✅ Bucket "${bucket}" already exists`);
+                minioClient.setBucketPolicy(bucket, JSON.stringify(policy), (err) => {
+                    if (err) console.error(`Error setting policy for "${bucket}":`, err);
+                    else console.log(`✅ Policy ensured for "${bucket}"`);
+                });
+            }
         }
-    }
+    });
 });
 
 // Configure multer for file upload
@@ -139,7 +142,7 @@ ${relevantText}
 Final JSON Output:`;
 
         const response = await ollama.post('/api/generate', {
-            model: 'llama3.2:latest',
+            model: process.env.OLLAMA_MODEL || 'llama3.2:latest',
             prompt: prompt,
             stream: false,
             options: {
@@ -216,16 +219,191 @@ Final JSON Output:`;
     }
 }
 
-// PUT /:id - Update a candidate (e.g. for comments)
+// PATCH /qualified/:id - Submit recruitment form for a candidate
+router.patch('/qualified/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const formData = req.body;
+        const db = getDB();
+        const { ObjectId } = require('mongodb');
+
+        if (!ObjectId.isValid(id)) {
+            return res.status(400).json({ success: false, error: 'Invalid ID' });
+        }
+
+        // 1. Generate PDF
+        const doc = new PDFDocument({ margin: 50 });
+        const stream = new PassThrough();
+        
+        doc.pipe(stream);
+
+        // PDF Styling & Content
+        doc.fontSize(24).font('Helvetica-Bold').text('Questionnaire de Recrutement', { align: 'center' });
+        doc.moveDown(1.5);
+        doc.fontSize(12).font('Helvetica').text(`ID Candidat: ${id}`, { align: 'right' });
+        doc.text(`Date de soumission: ${new Date().toLocaleDateString()}`, { align: 'right' });
+        doc.moveDown(2);
+
+        const questions = [
+            { key: 'presentezVous', label: '1. Présentez-vous ?' },
+            { key: 'apporteEtudes', label: '2. Que vous ont apporté vos études ?' },
+            { key: 'tempsRechercheEmploi', label: '3. Depuis combien de temps cherchez-vous un emploi ?' },
+            { key: 'qualitesDefauts', label: '4. Quelles sont vos qualités ? Quels sont vos défauts ?' },
+            { key: 'seulOuEquipe', label: '5. Préférez-vous travailler seul ou en équipe ? Pourquoi ?' },
+            { key: 'professionParents', label: '6. Quelle est la profession de vos parents ?' },
+            { key: 'pretentionsSalariales', label: '7. Quelles sont vos prétentions salariales ?' },
+            { key: 'lastExperience', label: '8. Tasks and responsibilities of last internship/job:' }
+        ];
+
+        questions.forEach(q => {
+            doc.fontSize(14).font('Helvetica-Bold').fillColor('#2d3748').text(q.label);
+            doc.moveDown(0.5);
+            doc.fontSize(12).font('Helvetica').fillColor('#1a202c').text(formData[q.key] || '-', { indent: 20 });
+            doc.moveDown(1.5);
+            doc.moveTo(50, doc.y).lineTo(550, doc.y).strokeColor('#cbd5e0').lineWidth(0.5).stroke();
+            doc.moveDown(1.5);
+        });
+
+        doc.end();
+
+        // 2. Upload to MinIO (bucket: qualified-candidats)
+        const QUALIFIED_BUCKET = 'qualified-candidats';
+        const fileName = `form-${id}-${Date.now()}.pdf`;
+
+        // Collect buffer from stream
+        const buffers = [];
+        stream.on('data', b => buffers.push(b));
+        
+        await new Promise((resolve, reject) => {
+            stream.on('end', async () => {
+                const buffer = Buffer.concat(buffers);
+                try {
+                    await minioClient.putObject(
+                        QUALIFIED_BUCKET,
+                        fileName,
+                        buffer,
+                        buffer.length,
+                        { 'Content-Type': 'application/pdf' }
+                    );
+                    resolve();
+                } catch (err) {
+                    reject(err);
+                }
+            });
+            stream.on('error', reject);
+        });
+
+        const pdfUrl = `http://localhost:9000/${QUALIFIED_BUCKET}/${fileName}`;
+
+        // 3. Update MongoDB
+        const result = await db.collection('candidats').updateOne(
+            { _id: new ObjectId(id) },
+            { 
+                $set: { 
+                    qualifiedFormPath: pdfUrl,
+                    formSubmittedAt: new Date()
+                } 
+            }
+        );
+
+        if (result.matchedCount === 0) {
+            return res.status(404).json({ success: false, error: 'Candidate not found' });
+        }
+
+        res.json({ 
+            success: true, 
+            message: 'Formulaire enregistré et PDF généré avec succès',
+            pdfUrl: pdfUrl
+        });
+
+    } catch (error) {
+        console.error('Qualified submission error:', error);
+        res.status(500).json({ success: false, error: 'Failed to process recruitment form' });
+    }
+});
+
+// GET /health - Check if Ollama is running
+router.get('/health', async (req, res) => {
+    try {
+        // Try to reach Ollama - use a simple tags check
+        const response = await ollama.get('/api/tags');
+        res.json({ 
+            success: true, 
+            ollamaRunning: true,
+            modelCount: response.data.models ? response.data.models.length : 0
+        });
+    } catch (error) {
+        console.error('Ollama health check failed:', error.message);
+        res.json({ 
+            success: true, 
+            ollamaRunning: false,
+            error: error.message
+        });
+    }
+});
+
+// GET /token/:token - Get candidate by form token (Hashed Access)
+router.get('/token/:token', async (req, res) => {
+    try {
+        const { token } = req.params;
+        const db = getDB();
+
+        const candidate = await db.collection('candidats').findOne({ formToken: token });
+
+        if (!candidate) {
+            return res.status(404).json({ success: false, error: 'Invalid or expired link' });
+        }
+
+        res.json({ success: true, data: candidate });
+    } catch (error) {
+        console.error('Fetch by token error:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch candidate' });
+    }
+});
+
+// GET /:id - Get a single candidate
+router.get('/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const db = getDB();
+        const { ObjectId } = require('mongodb');
+
+        if (!ObjectId.isValid(id)) {
+            return res.status(400).json({ success: false, error: 'Invalid ID' });
+        }
+
+        const candidate = await db.collection('candidats').findOne({ _id: new ObjectId(id) });
+
+        if (!candidate) {
+            return res.status(404).json({ success: false, error: 'Candidate not found' });
+        }
+
+        res.json({ success: true, data: candidate });
+    } catch (error) {
+        console.error('Fetch error:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch candidate' });
+    }
+});
+
+// PUT /:id - Update a candidate (e.g. for comments or enabling form)
 router.put('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const updates = req.body;
         const db = getDB();
         const { ObjectId } = require('mongodb');
+        const crypto = require('crypto');
 
         if (!ObjectId.isValid(id)) {
             return res.status(400).json({ success: false, error: 'Invalid ID' });
+        }
+
+        // If enabling the form, generate a secure token if it doesn't exist
+        if (updates.formStatus === 'active') {
+            const candidate = await db.collection('candidats').findOne({ _id: new ObjectId(id) });
+            if (candidate && !candidate.formToken) {
+                updates.formToken = crypto.randomBytes(16).toString('hex');
+            }
         }
 
         // Remove _id from updates if present
@@ -240,7 +418,14 @@ router.put('/:id', async (req, res) => {
             return res.status(404).json({ success: false, error: 'Candidate not found' });
         }
 
-        res.json({ success: true, message: 'Updated successfully' });
+        // Return the updated data so frontend can get the token
+        const updatedCandidate = await db.collection('candidats').findOne({ _id: new ObjectId(id) });
+
+        res.json({ 
+            success: true, 
+            message: 'Updated successfully',
+            data: updatedCandidate
+        });
     } catch (error) {
         console.error('Update error:', error);
         res.status(500).json({ success: false, error: 'Failed to update' });
@@ -412,22 +597,5 @@ router.post('/save', async (req, res) => {
         }
     });
 
-    // GET /health - Check if Ollama is running
-    router.get('/health', async (req, res) => {
-    try {
-        await ollama.get('/api/tags');
-        res.json({ 
-            success: true, 
-            ollamaRunning: true,
-            message: 'Ollama is running'
-        });
-    } catch (error) {
-        res.json({ 
-            success: true, 
-            ollamaRunning: false,
-            message: 'Ollama is not running or not accessible'
-        });
-    }
-});
-
 module.exports = router;
+
