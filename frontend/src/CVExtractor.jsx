@@ -218,21 +218,7 @@ const CVExtractor = () => {
           <div className="header">
             <h1>📄 Extracteur de CV Intelligent</h1>
             <p>Extraction automatisée d'informations à partir de CV PDF</p>
-            <div style={{ marginTop: "1rem" }}>
-              <a
-                href="/candidates"
-                className="view-list-link"
-                style={{
-                  color: "rgba(255,255,255,0.9)",
-                  textDecoration: "underline",
-                  fontSize: "0.9rem",
-                  cursor: "pointer",
-                }}
-              >
-                📋 Voir la liste des candidats
-              </a>
-            </div>
-            {!ollamaStatus && (
+                        {!ollamaStatus && (
               <div className="warning-banner">
                 ⚠️ Ollama n'est pas en cours d'exécution
               </div>

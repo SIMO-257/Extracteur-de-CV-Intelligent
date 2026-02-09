@@ -1,10 +1,23 @@
-import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { useState, useEffect } from 'react';
+import { useNavigate } from "react-router-dom";
 import "./styles/CVExtractor.css";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-const CandidatsRefuses = () => {
+function normalizeId(id) {
+  if (typeof id === "string") return id;
+  if (id && typeof id === "object") {
+    if (id.$oid) return id.$oid;
+    try {
+      const s = id.toString();
+      if (s && s !== "[object Object]") return s;
+    } catch {}
+  }
+  return String(id);
+}
+
+const ListeDépart = () => {
+  const navigate = useNavigate();
   const [candidates, setCandidates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -18,8 +31,8 @@ const CandidatsRefuses = () => {
       const response = await fetch(`${API_URL}/api/cv`);
       const data = await response.json();
       if (data.success) {
-        // Only show Refusé
-        setCandidates(data.data.filter((c) => c.status === "Refusé"));
+        // Filter: Only show Embaucé candidates with a dateDepart
+        setCandidates(data.data.filter((c) => c.hiringStatus === "Embaucé" && c.dateDepart));
       } else {
         setError("Failed to load candidates");
       }
@@ -31,17 +44,18 @@ const CandidatsRefuses = () => {
     }
   };
 
-  const handleRestore = async (id) => {
+  const handleUpdate = async (id, field, value) => {
     try {
-      await fetch(`${API_URL}/api/cv/${id}`, {
+      const _id = normalizeId(id);
+      await fetch(`${API_URL}/api/cv/${_id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "en Attente" }),
+        body: JSON.stringify({ [field]: value }),
       });
-      // Remove from this list
-      setCandidates(candidates.filter((c) => c._id !== id));
+      // Update local state - re-fetch candidates to ensure data consistency
+      fetchCandidates();
     } catch (err) {
-      console.error("Failed to restore candidate", err);
+      console.error(`Failed to update ${field}`, err);
     }
   };
 
@@ -53,8 +67,9 @@ const CandidatsRefuses = () => {
         className="cv-extractor-card"
         style={{ maxWidth: "1400px", display: "block" }}
       >
-        <div className="header">
-          <h1>🚫 Candidats Refusés</h1>
+        <div className="header" style={{ marginBottom: "2rem" }}>
+          <h1>👋 Candidats Partis</h1>
+
         </div>
 
         {error && <div className="error-message">{error}</div>}
@@ -65,21 +80,15 @@ const CandidatsRefuses = () => {
               <tr>
                 <th>Nom</th>
                 <th>Prénom</th>
-                <th>Poste</th>
-                <th>Société</th>
-                <th>Commentaire</th>
-                <th>Statut d'embauche</th>
-                <th>Actions</th>
+                <th>Date d'embauche</th>
+                <th>Date de départ</th>
               </tr>
             </thead>
             <tbody>
               {candidates.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan="6"
-                    style={{ textAlign: "center", padding: "2rem" }}
-                  >
-                    Aucun candidat refusé
+                  <td colSpan="4" style={{ textAlign: "center", padding: "2rem" }}>
+                    Aucun candidat n'est parti.
                   </td>
                 </tr>
               ) : (
@@ -89,26 +98,8 @@ const CandidatsRefuses = () => {
                     <td style={{ fontWeight: 600 }}>
                       {candidate["Prénom"] || "-"}
                     </td>
-                    <td>{candidate["Post Actuel"] || "-"}</td>
-                    <td>{candidate["Société"] || "-"}</td>
-                    <td>{candidate.recruiterComment || "-"}</td>
-                    <td>
-                      <span
-                        className={`badge ${candidate.hiringStatus?.toLowerCase().replaceAll(" ", "-") || "attente-validation-client"}`}
-                      >
-                        {candidate.hiringStatus || "Attente validation client"}
-                      </span>
-                    </td>
-                    <td>
-                      <button
-                        onClick={() => handleRestore(candidate._id)}
-                        className="extract-button"
-                        style={{ padding: "0.4rem 0.8rem", fontSize: "0.8rem" }}
-                        title="Restaurer"
-                      >
-                        ↩ Restaurer
-                      </button>
-                    </td>
+                    <td>{candidate["Date d'embauche"] || "-"}</td>
+                    <td>{candidate.dateDepart || "-"}</td>
                   </tr>
                 ))
               )}
@@ -120,4 +111,5 @@ const CandidatsRefuses = () => {
   );
 };
 
-export default CandidatsRefuses;
+export default ListeDépart;
+

@@ -4,6 +4,7 @@ const cors = require('cors');
 const { connectDB} = require('./db');
 const cvRoutes = require('./Routes/cvRoutes');
 const authRoutes = require('./Routes/authRoutes');
+const path = require('path'); // Add this line
 
 const app = express();
 
@@ -11,6 +12,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve static files from the 'uploads' directory (for MinIO)
+app.use('/uploads', express.static('uploads'));
+// Also serve the temporary uploads for multer disk storage
+app.use('/temp_uploads', express.static(path.join(__dirname, 'temp_uploads')));
 
 // Routes
 app.use('/api/cv', cvRoutes);

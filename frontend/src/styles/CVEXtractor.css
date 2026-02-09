@@ -479,12 +479,27 @@ select.form-input {
   top: 20px;
 }
 
+.back-link-horizontal {
+  color: white;
+  text-decoration: none;
+  font-weight: 500;
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.back-link-horizontal:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateX(-5px);
+}
+
 .header {
-    position: relative; /* For back link positioning */
+  position: relative; /* For back link positioning */
 }
 
 .table-responsive {
-    overflow-x: auto;
+  overflow-x: auto;
 }
 
 .no-file {
@@ -520,6 +535,52 @@ select.form-input {
   background-color: #fed7d7;
   color: #c53030;
   border-color: #feb2b2;
+}
+
+.status-select.attente-validation-client {
+  background-color: #e2e8f0;
+  color: #4a5568;
+  border-color: #cbd5e0;
+}
+
+.status-select.embaucé {
+  background-color: #c6f6d5;
+  color: #276749;
+  border-color: #9ae6b4;
+}
+
+.status-select.non-embauché {
+  background-color: #fed7d7;
+  color: #c53030;
+  border-color: #feb2b2;
+}
+
+/* Service specific colors */
+.service-select.commercial { background-color: #ebf8ff; color: #2b6cb0; border-color: #bee3f8; }
+.service-select.rh { background-color: #f0fff4; color: #2f855a; border-color: #c6f6d5; }
+.service-select.facturation { background-color: #fffaf0; color: #9c4221; border-color: #feebc8; }
+.service-select.relance { background-color: #fff5f5; color: #c53030; border-color: #fed7d7; }
+.service-select.en-voie { background-color: #faf5ff; color: #6b46c1; border-color: #e9d8fd; }
+.service-select.harmonisation { background-color: #e6fffa; color: #2c7a7b; border-color: #b2f5ea; }
+.service-select.commande { background-color: #ebf4ff; color: #2c5282; border-color: #c3dafe; }
+.service-select.logistique { background-color: #f7fafc; color: #4a5568; border-color: #edf2f7; }
+.service-select.front-office { background-color: #fffdf2; color: #d69e2e; border-color: #fefcbf; }
+.service-select.emailing { background-color: #f5f5f5; color: #4a4a4a; border-color: #e0e0e0; }
+.service-select.ao { background-color: #edf2f7; color: #2c5282; border-color: #cbd5e0; }
+.service-select.sourcing { background-color: #f0fff4; color: #276749; border-color: #9ae6b4; }
+.service-select.info { background-color: #e2e8f0; color: #1a202c; border-color: #cbd5e0; }
+
+/* Hiring final status colors */
+.final-status-select.accepté {
+  background-color: #c6f6d5;
+  color: #276749;
+  border-color: #9ae6b4;
+}
+
+.final-status-select.prolongé-la-formation {
+  background-color: #feebc8;
+  color: #9c4221;
+  border-color: #fbd38d;
 }
 
 .comment-input {

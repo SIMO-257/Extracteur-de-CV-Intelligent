@@ -1,10 +1,24 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import "./styles/CVExtractor.css"; // Reusing existing styles for consistency
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || "http://localhost:5173";
+
+function normalizeId(id) {
+  if (typeof id === "string") return id;
+  if (id && typeof id === "object") {
+    if (id.$oid) return id.$oid;
+    try {
+      const s = id.toString();
+      if (s && s !== "[object Object]") return s;
+    } catch {}
+  }
+  return String(id);
+}
 
 const CandidatesList = () => {
+  const navigate = useNavigate();
   const [candidates, setCandidates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -53,7 +67,8 @@ const CandidatesList = () => {
 
   const handleCommentChange = async (id, newComment) => {
     try {
-      await fetch(`${API_URL}/api/cv/${id}`, {
+      const _id = normalizeId(id);
+      await fetch(`${API_URL}/api/cv/${_id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ recruiterComment: newComment }),
@@ -61,7 +76,9 @@ const CandidatesList = () => {
       // Optimistically update local state
       setCandidates((prev) =>
         prev.map((c) =>
-          c._id === id ? { ...c, recruiterComment: newComment } : c,
+          normalizeId(c._id) === _id
+            ? { ...c, recruiterComment: newComment }
+            : c,
         ),
       );
     } catch (err) {
@@ -71,7 +88,8 @@ const CandidatesList = () => {
 
   const handleEnableForm = async (id) => {
     try {
-      const response = await fetch(`${API_URL}/api/cv/${id}`, {
+      const _id = normalizeId(id);
+      const response = await fetch(`${API_URL}/api/cv/${_id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ formStatus: "active" }),
@@ -80,10 +98,19 @@ const CandidatesList = () => {
       if (data.success) {
         const updatedCandidate = data.data;
         setCandidates((prev) =>
-          prev.map((c) => (c._id === id ? updatedCandidate : c)),
+          prev.map((c) =>
+            normalizeId(c._id) === _id ? updatedCandidate : c,
+          ),
         );
-        const link = `${window.location.origin}/form/${updatedCandidate.formToken}`;
-        alert(`Accès activé ! \nLien à envoyer au candidat : \n${link}`);
+        const link = `${FRONTEND_URL}/form/${updatedCandidate.formToken}`;
+        try {
+          await navigator.clipboard.writeText(link);
+          alert(`🚀 Formulaire activé. Lien copié dans le presse‑papier :\n\n${link}`);
+          // Open the form in a new tab so the admin stays on the list page
+          window.open(link, "_blank");
+        } catch {
+          alert(`🚀 Formulaire activé. Lien : ${link}`);
+        }
       }
     } catch (err) {
       console.error("Failed to enable form", err);
@@ -92,24 +119,49 @@ const CandidatesList = () => {
 
   const handleStatusChange = async (id, newStatus) => {
     try {
-      await fetch(`${API_URL}/api/cv/${id}`, {
+      const _id = normalizeId(id);
+      await fetch(`${API_URL}/api/cv/${_id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
       // Update local state
       setCandidates((prev) =>
-        prev.map((c) => (c._id === id ? { ...c, status: newStatus } : c)),
+        prev.map((c) =>
+          normalizeId(c._id) === _id ? { ...c, status: newStatus } : c,
+        ),
       );
     } catch (err) {
       console.error("Failed to update status", err);
     }
   };
+  const handleHiringStatusChange = async (id, newHiringStatus) => {
+    try {
+      const _id = normalizeId(id);
+      await fetch(`${API_URL}/api/cv/${_id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hiringStatus: newHiringStatus }),
+      });
+      // Update local state
+      setCandidates((prev) =>
+        prev.map((c) =>
+          normalizeId(c._id) === _id
+            ? { ...c, hiringStatus: newHiringStatus }
+            : c,
+        ),
+      );
+    } catch (err) {
+      console.error("Failed to update hiring status", err);
+    }
+  };
 
   if (loading) return <div className="loading-spinner">Loading...</div>;
 
-  // Filter candidates: Show only those NOT Refusé
-  const activeCandidates = candidates.filter((c) => c.status !== "Refusé");
+  // Filter candidates: Show only those NOT Refusé and NOT Embaucé
+  const activeCandidates = candidates.filter(
+    (c) => c.status !== "Refusé" && c.hiringStatus !== "Embaucé",
+  );
 
   return (
     <div className="cv-extractor-container">
@@ -122,46 +174,6 @@ const CandidatesList = () => {
           style={{ marginBottom: "2rem", flexWrap: "wrap" }}
         >
           <h1>👥 Liste des Candidats</h1>
-          <div
-            style={{
-              display: "flex",
-              gap: "1rem",
-              alignItems: "center",
-              flexWrap: "wrap",
-            }}
-          >
-            <Link
-              to="/scan"
-              className="view-list-link"
-              style={{ fontSize: "0.85rem", background: "#3182ce" }}
-            >
-              🚀 Scanner CV
-            </Link>
-            <Link
-              to="/refused"
-              className="view-list-link"
-              style={{ fontSize: "0.85rem" }}
-            >
-              🚫 Refusés
-            </Link>
-            <button
-              onClick={() => {
-                localStorage.removeItem("isAdminLoggedIn");
-                window.location.href = "/login";
-              }}
-              className="view-list-link"
-              style={{
-                background: "#e53e3e",
-                border: "none",
-                color: "white",
-                fontSize: "0.85rem",
-                cursor: "pointer",
-                padding: "8px 12px",
-              }}
-            >
-              🚪 Déconnexion
-            </button>
-          </div>
         </div>
 
         {error && <div className="error-message">{error}</div>}
@@ -182,6 +194,7 @@ const CandidatesList = () => {
                 <th>Anglais</th>
                 <th>Commentaire</th>
                 <th>Statut</th>
+                <th>Statut d'embauche</th>
                 <th>CV</th>
                 <th>Selection</th>
                 <th>Formulaire</th>
@@ -217,13 +230,23 @@ const CandidatesList = () => {
                       </ul>
                     );
                   } else {
-                    // Fallback for legacy string data
-                    englishDisplay = (
-                      <span className="badge">
-                        {candidate["Votre niveau de l'anglais technique"] ||
-                          "-"}
-                      </span>
-                    );
+                    // Fallback for legacy string data or when it's not an object
+                    const englishValue = candidate["Votre niveau de l'anglais technique"];
+                    if (typeof englishValue === "object" && englishValue !== null) {
+                      // If it's an object but we didn't catch it above, display as JSON string
+                      englishDisplay = (
+                        <span className="badge">
+                          {JSON.stringify(englishValue)}
+                        </span>
+                      );
+                    } else {
+                      // Normal string fallback
+                      englishDisplay = (
+                        <span className="badge">
+                          {englishValue || "-"}
+                        </span>
+                      );
+                    }
                   }
 
                   return (
@@ -264,6 +287,27 @@ const CandidatesList = () => {
                           <option value="en Attente">en Attente</option>
                           <option value="Accepté">Accepté</option>
                           <option value="Refusé">Refusé</option>
+                        </select>
+                      </td>
+                      <td>
+                        <select
+                          value={
+                            candidate.hiringStatus ||
+                            "Attente validation Candidat"
+                          }
+                          onChange={(e) =>
+                            handleHiringStatusChange(
+                              candidate._id,
+                              e.target.value,
+                            )
+                          }
+                          className={`status-select ${candidate.hiringStatus?.toLowerCase().replaceAll(" ", "-")}`}
+                        >
+                          <option value="Attente validation Candidat">
+                            Attente validation Candidat
+                          </option>
+                          <option value="Embaucé">Embaucé</option>
+                          <option value="Non Embauché">Non Embauché</option>
                         </select>
                       </td>
                       <td>

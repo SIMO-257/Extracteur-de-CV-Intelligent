@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import "./styles/RecruitmentForm.css";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 const RecruitmentForm = () => {
   const { token } = useParams();
-  const navigate = useNavigate();
   const [candidateId, setCandidateId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
   const [isAllowed, setIsAllowed] = useState(false);
+  const [accessError, setAccessError] = useState("");
+  const [submitted, setSubmitted] = useState(false);
   const [formData, setFormData] = useState({
     presentezVous: "",
     apporteEtudes: "",
@@ -26,6 +27,7 @@ const RecruitmentForm = () => {
     if (token) {
       checkAccess();
     } else {
+      setIsAllowed(true);
       setChecking(false);
     }
   }, [token]);
@@ -34,12 +36,22 @@ const RecruitmentForm = () => {
     try {
       const response = await fetch(`${API_URL}/api/cv/token/${token}`);
       const data = await response.json();
-      if (data.success && data.data.formStatus === "active") {
+
+      if (!data.success) {
+        setAccessError(data.error || "Lien invalide");
+      } else if (data.data.formStatus !== "active") {
+        setAccessError(
+          "Ce formulaire n'est pas encore activé par le recruteur.",
+        );
+      } else {
         setIsAllowed(true);
         setCandidateId(data.data._id);
       }
     } catch (err) {
       console.error("Access check error:", err);
+      setAccessError(
+        "Erreur de connexion au serveur lors de la vérification de l'accès.",
+      );
     } finally {
       setChecking(false);
     }
@@ -64,19 +76,30 @@ const RecruitmentForm = () => {
 
       const method = candidateId ? "PATCH" : "POST";
 
+      let requestBody = formData;
+      if (!candidateId) {
+        // Only add these fields for new submissions (POST)
+        requestBody = {
+          ...formData,
+          status: "en Attente",
+          hiringStatus: "Attente validation client",
+          formStatus: "inactive", // Will be updated to 'submitted' on success
+          createdAt: new Date(),
+        };
+      }
+
       const response = await fetch(endpoint, {
         method: method,
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
 
       if (data.success) {
-        alert("Formulaire soumis avec succès !");
-        navigate("/candidates");
+        setSubmitted(true);
       } else {
         alert("Erreur: " + data.error);
       }
@@ -110,14 +133,71 @@ const RecruitmentForm = () => {
             <span style={{ fontSize: "50px" }}>🛡️</span>
             <h1>Accès Restreint</h1>
             <p>
-              Ce formulaire n'est pas encore activé ou le lien est invalide.
+              {accessError ||
+                "Ce formulaire n'est pas encore activé ou le lien est invalide."}
             </p>
+            <div
+              style={{
+                marginTop: "20px",
+                fontSize: "0.8rem",
+                color: "#718096",
+                textAlign: "left",
+                background: "#f7fafc",
+                padding: "15px",
+                borderRadius: "8px",
+              }}
+            >
+              <strong>Debug Info:</strong>
+              <div style={{ marginTop: "5px" }}>
+                Token: <code>{token || "aucun"}</code>
+              </div>
+              <div>
+                API URL: <code>{API_URL}</code>
+              </div>
+              <div>
+                Full URL: <code>{`${API_URL}/api/cv/token/${token}`}</code>
+              </div>
+              <button
+                onClick={() => window.location.reload()}
+                style={{
+                  marginTop: "10px",
+                  background: "#3182ce",
+                  color: "white",
+                  border: "none",
+                  padding: "5px 10px",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+              >
+                🔄 Actualiser la page
+              </button>
+            </div>
           </div>
         </div>
       </div>
     );
   }
 
+  if (submitted) {
+    return (
+      <div className="recruitment-container">
+        <div
+          className="form-card"
+          style={{ textAlign: "center", padding: "80px 50px" }}
+        >
+          <div className="form-header">
+            <span style={{ fontSize: "60px" }}>🎉</span>
+            <h1>Merci !</h1>
+            <p>Votre candidature a été soumise avec succès.</p>
+            <p style={{ marginTop: "20px", color: "#718096" }}>
+              Notre équipe va étudier vos réponses et reviendra vers vous
+              prochainement.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="recruitment-container">
       <div className="recruitment-card">
