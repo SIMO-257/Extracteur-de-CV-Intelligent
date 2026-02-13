@@ -4,6 +4,7 @@ const cors = require('cors');
 const { connectDB} = require('./db');
 const cvRoutes = require('./Routes/cvRoutes');
 const authRoutes = require('./Routes/authRoutes');
+const adminRoutes = require('./Routes/adminRoutes');
 const path = require('path'); // Add this line
 
 const app = express();
@@ -21,6 +22,7 @@ app.use('/temp_uploads', express.static(path.join(__dirname, 'temp_uploads')));
 // Routes
 app.use('/api/cv', cvRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

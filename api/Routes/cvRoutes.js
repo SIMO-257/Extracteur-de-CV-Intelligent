@@ -7,7 +7,34 @@ const path = require("path");
 const { Client } = require("minio");
 const fs = require("fs");
 const { PassThrough } = require("stream");
+const archiver = require("archiver");
+const { pipeline } = require("stream/promises"); // For efficient streaming
+const fsPromises = require("fs/promises"); // For async file operations
 const { getDB } = require("../db");
+
+// Helper function to download file from MinIO
+async function downloadFileFromMinio(bucketName, objectName, outputPath) {
+  try {
+    // Check if the object exists before trying to get it
+    await minioClient.statObject(bucketName, objectName);
+    const stream = await minioClient.getObject(bucketName, objectName);
+    const fileStream = fs.createWriteStream(outputPath);
+    await pipeline(stream, fileStream);
+    console.log(`Downloaded ${objectName} from ${bucketName} to ${outputPath}`);
+    return true;
+  } catch (err) {
+    if (err.code === "NotFound") {
+      console.warn(`MinIO object not found: ${bucketName}/${objectName}`);
+    } else {
+      console.error(
+        `Error downloading ${bucketName}/${objectName} from MinIO:`,
+        err,
+      );
+    }
+    return false;
+  }
+}
+
 const PDFDocument = require("pdfkit"); // Add this line to require pdfkit
 
 // MinIO Client
@@ -84,23 +111,33 @@ const uploadCv = multer({
 // Configure multer for Rapport de Stage file upload (disk storage for saving)
 const rapportStorage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, '..', 'temp_uploads'); // Temporary local storage
+    const uploadDir = path.join(__dirname, "..", "temp_uploads"); // Temporary local storage
     fs.mkdirSync(uploadDir, { recursive: true });
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    cb(null, file.fieldname + '-' + Date.now() + path.extname(file.originalname));
-  }
+    cb(
+      null,
+      file.fieldname + "-" + Date.now() + path.extname(file.originalname),
+    );
+  },
 });
 const uploadRapport = multer({
   storage: rapportStorage,
   limits: { fileSize: 20 * 1024 * 1024 }, // 20MB limit for reports
   fileFilter: (req, file, cb) => {
-    const allowedMimes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    const allowedMimes = [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error("Only PDF or Word documents are allowed for reports!"), false);
+      cb(
+        new Error("Only PDF or Word documents are allowed for reports!"),
+        false,
+      );
     }
   },
 });
@@ -134,12 +171,63 @@ function extractRecruitmentForm(pdfText) {
   err.code = "FORM_NOT_FOUND";
   throw err;
 }
+function extractEnglishManually(formText) {
+  const lines = formText
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((l) => l.trimEnd());
+
+  // 1️⃣ Find header line
+  const headerIndex = lines.findIndex((l) => /faible\s+moyen\s+bien/i.test(l));
+
+  if (headerIndex === -1) {
+    return { Lu: "-", Ecrit: "-", Parlé: "-" };
+  }
+
+  const header = lines[headerIndex];
+
+  // 2️⃣ Get column positions
+  const col = {
+    faible: header.toLowerCase().indexOf("faible"),
+    moyen: header.toLowerCase().indexOf("moyen"),
+    bien: header.toLowerCase().indexOf("bien"),
+  };
+
+  function resolveRow(label) {
+    const row = lines.find((l) => new RegExp(`^${label}\\b`, "i").test(l));
+
+    if (!row) return "-";
+
+    const picks = [];
+
+    if (row[col.faible] === "X") picks.push("Faible");
+    if (row[col.moyen] === "X") picks.push("Moyen");
+    if (row[col.bien] === "X") picks.push("Bien");
+
+    return picks.length === 1 ? picks[0] : "-";
+  }
+  console.log("📊 ENGLISH TABLE LINES:");
+  lines.slice(headerIndex - 2, headerIndex + 6).forEach((l) => console.log(l));
+
+  return {
+    Lu: resolveRow("Lu"),
+    Ecrit: resolveRow("Ecrit"),
+    Parlé: resolveRow("Parl[eé]"),
+  };
+}
 
 // Extract CV information using Ollama
 async function extractWithOllama(pdfText) {
   try {
     // 1️⃣ Strict extraction: ONLY Page 3
     const formText = await extractRecruitmentForm(pdfText);
+    const englishLevel = extractEnglishManually(formText);
+
+    console.log("🇬🇧 English extracted manually:", englishLevel);
+    console.log("=== FORM TEXT DEBUG ===");
+    console.log("Full formText length:", formText.length);
+    console.log("formText:", formText);
+    console.log("=== END FORM TEXT DEBUG ===");
 
     // 2️⃣ Strict, minimal, deterministic prompt
     const prompt = `You are a STRICT data extraction engine.
@@ -163,51 +251,21 @@ JSON FORMAT (must match EXACTLY):
   "Date d'embauche": "string",
   "Salaire net Actuel": "string",
   "Votre dernier diplome": "string",
-  "Votre niveau de l'anglais technique": {
-    "Lu": "string",
-    "Ecrit": "string",
-    "Parlé": "string"
-  }
+  "situationFamiliale": "string",
+  "nbEnfants": "string",
+  "pourquoiChanger": "string",
+  "dureePreavis": "string",
+  "fonctionsMissions": "string",
+  "ecole": "string",
+  "anneeDiplome": "string",
+  "posteSedentaire": "string",
+  "missionsMaitrisees": "string",
+  "travailSeulEquipe": "string",
+  "zoneSapino": "string",
+  "motorise": "string",
+  "pretentionsSalariales": "string",
+  "questionsRemarques": "string"
 }
-
-CRITICAL EXTRACTION METHOD (MANDATORY):
-For "Votre niveau de l'anglais technique", extraction MUST be done in ISOLATION.
-
-STEP 1 — ROW ISOLATION (NO EXCEPTIONS):
-- Isolate text belonging ONLY to "Lu".
-- Isolate text belonging ONLY to "Ecrit".
-- Isolate text belonging ONLY to "Parlé".
-- Text from one row MUST NOT influence another row.
-- Do NOT reuse or copy values across rows.
-
-STEP 2 — PER-ROW ANALYSIS:
-Each isolated row MUST be analyzed independently.
-
-VALID PROFICIENCY LEVELS (EXACT WORDS ONLY):
-- "Faible"
-- "Moyen"
-- "Bien"
-
-VALID MARKERS:
-- "X"
-- "oui"
-
-DECISION RULES (APPLY PER ROW):
-- Detect proficiency levels ONLY if explicitly marked with "X" or "oui".
-- If EXACTLY ONE level is marked → output that level.
-- If ZERO levels are marked → output "-".
-- If MORE THAN ONE level is marked → output "-" (DO NOT choose).
-- NEVER select a level by frequency, similarity, or consistency.
-
-STRICT PROHIBITIONS:
-- DO NOT translate (e.g. Low, Medium, Good).
-- DO NOT assume table alignment.
-- DO NOT infer missing marks.
-- DO NOT normalize results across rows.
-- DO NOT guess even if one value appears dominant.
-
-FAILURE SAFETY RULE:
-- If table structure is unclear or text is ambiguous, return "-" for Lu, Ecrit, and Parlé.
 
 FORM TEXT:
 ${formText}
@@ -229,6 +287,9 @@ JSON:`;
     });
 
     // 4️⃣ Clean & parse response
+    console.log("RAW ENGLISH BLOCK:");
+    console.log(formText.match(/anglais(.|\n){0,300}/i));
+
     let raw = response.data.response.replace(/```json|```/g, "").trim();
     const firstBrace = raw.indexOf("{");
     const lastBrace = raw.lastIndexOf("}");
@@ -250,11 +311,21 @@ JSON:`;
       "Date d'embauche": extracted["Date d'embauche"] || "-",
       "Salaire net Actuel": extracted["Salaire net Actuel"] || "-",
       "Votre dernier diplome": extracted["Votre dernier diplome"] || "-",
-      "Votre niveau de l'anglais technique": {
-        Lu: extracted?.["Votre niveau de l'anglais technique"]?.Lu || "-",
-        Ecrit: extracted?.["Votre niveau de l'anglais technique"]?.Ecrit || "-",
-        Parlé: extracted?.["Votre niveau de l'anglais technique"]?.Parlé || "-",
-      },
+      situationFamiliale: extracted["situationFamiliale"] || "-",
+      nbEnfants: extracted["nbEnfants"] || "-",
+      pourquoiChanger: extracted["pourquoiChanger"] || "-",
+      dureePreavis: extracted["dureePreavis"] || "-",
+      fonctionsMissions: extracted["fonctionsMissions"] || "-",
+      ecole: extracted["ecole"] || "-",
+      anneeDiplome: extracted["anneeDiplome"] || "-",
+      posteSedentaire: extracted["posteSedentaire"] || "-",
+      missionsMaitrisees: extracted["missionsMaitrisees"] || "-",
+      travailSeulEquipe: extracted["travailSeulEquipe"] || "-",
+      zoneSapino: extracted["zoneSapino"] || "-",
+      motorise: extracted["motorise"] || "-",
+      pretentionsSalariales: extracted["pretentionsSalariales"] || "-",
+      questionsRemarques: extracted["questionsRemarques"] || "-",
+      "Votre niveau de l'anglais technique": englishLevel, // ✅ JS wins
     };
 
     return result;
@@ -794,6 +865,73 @@ router.put("/eval/activate/:id", async (req, res) => {
   }
 });
 
+// POST /generate-form-link - Generate a unique form link for a new candidate
+router.post("/generate-form-link", async (req, res) => {
+  try {
+    const db = getDB();
+    const crypto = require("crypto");
+
+    const formToken = crypto.randomBytes(16).toString("hex"); // Generate a unique token
+
+    const newCandidat = {
+      Nom: "",
+      Prénom: "",
+      "Date de naissance": "",
+      "Adress Actuel": "",
+      "Post Actuel": "",
+      Société: "",
+      "Date d'embauche": "",
+      "Salaire net Actuel": "",
+      "Votre dernier diplome": "",
+      "Votre niveau de l'anglais technique": { Lu: "", Ecrit: "", Parlé: "" },
+      // New fields from PDF
+      situationFamiliale: "",
+      nbEnfants: "",
+      pourquoiChanger: "",
+      dureePreavis: "",
+      fonctionsMissions: "",
+      ecole: "",
+      anneeDiplome: "",
+      posteSedentaire: "",
+      missionsMaitrisees: "",
+      travailSeulEquipe: "",
+      zoneSapino: "",
+      motorise: "",
+      pretentionsSalariales: "",
+      questionsRemarques: "",
+      status: "en Attente", // Default status
+      hiringStatus: "Attente formulaire", // Candidate needs to fill out the form
+      formStatus: "active", // Form is active and ready to be filled
+      formToken: formToken, // Store the unique token
+      originalCvMinioPath: null, // No CV uploaded yet
+      evalStatus: "inactive",
+      evalAnswers: null,
+      evalCorrection: null,
+      evalScore: null,
+      evalPdfPath: null,
+      createdAt: new Date(),
+    };
+
+    const result = await db.collection("candidats").insertOne(newCandidat);
+
+    if (result.acknowledged) {
+      res.json({
+        success: true,
+        message: "Form link generated successfully",
+        formToken: formToken,
+        candidateId: result.insertedId,
+      });
+    } else {
+      throw new Error("Failed to insert new candidate.");
+    }
+  } catch (error) {
+    console.error("Error generating form link:", error);
+    res
+      .status(500)
+      .json({ success: false, error: "Failed to generate form link" });
+  }
+});
+
 // PATCH /eval/submit/:id - Submit evaluation answers
 router.patch("/eval/submit/:id", async (req, res) => {
   try {
@@ -836,7 +974,10 @@ router.patch("/eval/correct/:id", async (req, res) => {
     const { ObjectId } = require("mongodb");
 
     console.log("Received ID:", id);
-    console.log("Received evalCorrection:", JSON.stringify(evalCorrection, null, 2));
+    console.log(
+      "Received evalCorrection:",
+      JSON.stringify(evalCorrection, null, 2),
+    );
     console.log("Received evalScore:", evalScore);
 
     if (!ObjectId.isValid(id)) {
@@ -924,7 +1065,8 @@ router.patch("/eval/correct/:id", async (req, res) => {
       doc
         .fillColor("#4a5568")
         .text(
-          `Réponse : ${(candidate.evalAnswers && candidate.evalAnswers[q.id]) || "N/A"
+          `Réponse : ${
+            (candidate.evalAnswers && candidate.evalAnswers[q.id]) || "N/A"
           }`,
         );
       const isTrue = evalCorrection[q.id];
@@ -973,14 +1115,17 @@ router.patch("/eval/correct/:id", async (req, res) => {
         res.json({ success: true, pdfUrl });
       } catch (error) {
         console.error("Error during MinIO upload or MongoDB update:", error);
-        res
-          .status(500)
-          .json({ success: false, error: "Failed to save corrected evaluation" });
+        res.status(500).json({
+          success: false,
+          error: "Failed to save corrected evaluation",
+        });
       }
     });
     stream.on("error", (err) => {
       console.error("PDF stream error during evaluation correction:", err);
-      res.status(500).json({ success: false, error: "Error processing PDF stream" });
+      res
+        .status(500)
+        .json({ success: false, error: "Error processing PDF stream" });
     });
   } catch (error) {
     console.error("Eval correction error (caught by handler):", error);
@@ -1026,11 +1171,15 @@ router.post("/extract", uploadCv.single("cv"), async (req, res) => {
 
     console.log("✅ Extraction complete");
 
+    // Construct the full URL for the uploaded CV
+    const cvUrl = `http://localhost:9000/${BUCKET_NAME}/${fileName}`;
+
     // Return extracted data
     res.json({
       success: true,
       data: extractedData,
       fileName: fileName,
+      cvUrl: cvUrl,
       pdfText: pdfText.substring(0, 500), // First 500 chars for preview
     });
   } catch (error) {
@@ -1058,65 +1207,124 @@ router.post("/extract", uploadCv.single("cv"), async (req, res) => {
   }
 });
 
-// NEW ROUTE for uploading rapport de stage
-router.post('/:id/upload-rapport-stage', uploadRapport.single('rapportStage'), async (req, res) => {
+// POST /upload-only-cv - Uploads a CV file to MinIO without extraction
+router.post("/upload-only-cv", uploadCv.single("cv"), async (req, res) => {
   try {
-    const { id } = req.params;
     if (!req.file) {
-      return res.status(400).json({ success: false, error: 'No file uploaded.' });
+      return res.status(400).json({
+        success: false,
+        error: "No PDF file uploaded",
+      });
     }
 
-    const db = getDB();
-    const { ObjectId } = require("mongodb");
-
-    if (!ObjectId.isValid(id)) {
-      // Clean up the uploaded file if ID is invalid
-      fs.unlinkSync(req.file.path);
-      return res.status(400).json({ success: false, error: "Invalid ID" });
-    }
-
-    const candidate = await db.collection("candidats").findOne({ _id: new ObjectId(id) });
-    if (!candidate) {
-      // Clean up the uploaded file if candidate not found
-      fs.unlinkSync(req.file.path);
-      return res.status(404).json({ success: false, error: 'Candidat not found.' });
-    }
-
-    // Read the file buffer from the temporary location
-    const fileBuffer = fs.readFileSync(req.file.path);
-    const minioFileName = `rapport-${id}-${Date.now()}${path.extname(req.file.originalname)}`;
+    console.log("📄 Uploading CV only:", req.file.originalname);
 
     // Upload to MinIO
+    const fileName = `${Date.now()}-${req.file.originalname}`;
     await minioClient.putObject(
-      RAPPORT_BUCKET_NAME,
-      minioFileName,
-      fileBuffer,
-      fileBuffer.length,
-      { 'Content-Type': req.file.mimetype }
+      BUCKET_NAME,
+      fileName,
+      req.file.buffer,
+      req.file.size,
+      { "Content-Type": "application/pdf" },
     );
 
-    // Remove the temporary file from disk
-    fs.unlinkSync(req.file.path);
+    console.log("✅ CV uploaded to MinIO:", fileName);
 
-    const rapportMinioPath = `http://localhost:9000/${RAPPORT_BUCKET_NAME}/${minioFileName}`;
+    // Construct the full URL for the uploaded CV
+    const cvUrl = `http://localhost:9000/${BUCKET_NAME}/${fileName}`;
 
-    // Update MongoDB
-    await db.collection("candidats").updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { rapportStagePath: rapportMinioPath } }
-    );
-
-    res.json({ success: true, message: 'Rapport de stage uploaded successfully.', filePath: rapportMinioPath });
-
+    res.json({
+      success: true,
+      message: "CV file uploaded successfully",
+      fileName: fileName,
+      cvUrl: cvUrl,
+    });
   } catch (error) {
-    console.error('Error uploading rapport de stage:', error);
-    // Ensure temporary file is cleaned up even on error
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
-    res.status(500).json({ success: false, error: 'Server error during upload.' });
+    console.error("Error uploading CV only:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to upload CV file: " + error.message,
+    });
   }
 });
+
+// NEW ROUTE for uploading rapport de stage
+router.post(
+  "/:id/upload-rapport-stage",
+  uploadRapport.single("rapportStage"),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!req.file) {
+        return res
+          .status(400)
+          .json({ success: false, error: "No file uploaded." });
+      }
+
+      const db = getDB();
+      const { ObjectId } = require("mongodb");
+
+      if (!ObjectId.isValid(id)) {
+        // Clean up the uploaded file if ID is invalid
+        fs.unlinkSync(req.file.path);
+        return res.status(400).json({ success: false, error: "Invalid ID" });
+      }
+
+      const candidate = await db
+        .collection("candidats")
+        .findOne({ _id: new ObjectId(id) });
+      if (!candidate) {
+        // Clean up the uploaded file if candidate not found
+        fs.unlinkSync(req.file.path);
+        return res
+          .status(404)
+          .json({ success: false, error: "Candidat not found." });
+      }
+
+      // Read the file buffer from the temporary location
+      const fileBuffer = fs.readFileSync(req.file.path);
+      const minioFileName = `rapport-${id}-${Date.now()}${path.extname(req.file.originalname)}`;
+
+      // Upload to MinIO
+      await minioClient.putObject(
+        RAPPORT_BUCKET_NAME,
+        minioFileName,
+        fileBuffer,
+        fileBuffer.length,
+        { "Content-Type": req.file.mimetype },
+      );
+
+      // Remove the temporary file from disk
+      fs.unlinkSync(req.file.path);
+
+      const rapportMinioPath = `http://localhost:9000/${RAPPORT_BUCKET_NAME}/${minioFileName}`;
+
+      // Update MongoDB
+      await db
+        .collection("candidats")
+        .updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { rapportStagePath: rapportMinioPath } },
+        );
+
+      res.json({
+        success: true,
+        message: "Rapport de stage uploaded successfully.",
+        filePath: rapportMinioPath,
+      });
+    } catch (error) {
+      console.error("Error uploading rapport de stage:", error);
+      // Ensure temporary file is cleaned up even on error
+      if (req.file && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      res
+        .status(500)
+        .json({ success: false, error: "Server error during upload." });
+    }
+  },
+);
 
 // POST /save - Save the final CV data (manual + auto)
 router.post("/save", async (req, res) => {
@@ -1138,7 +1346,8 @@ router.post("/save", async (req, res) => {
       ...cvData,
       status: "en Attente",
       hiringStatus: "Attente validation client",
-      formStatus: "inactive",
+      formStatus: "submitted",
+      originalCvMinioPath: cvData.originalCvMinioPath || null, // Use originalCvMinioPath from client if available
       // Evaluation lifecycle defaults
       evalStatus: "inactive",
       evalAnswers: null,
@@ -1226,6 +1435,197 @@ router.delete("/:id", async (req, res) => {
       success: false,
       error: "Failed to delete candidate",
     });
+  }
+});
+
+// NEW ROUTE: Download all documents for a single candidate by ID
+router.get("/:id/download-docs", async (req, res) => {
+  const db = getDB();
+  const { id } = req.params;
+  const { ObjectId } = require("mongodb");
+  console.log(
+    `[${new Date().toISOString()}] Received download request for candidate ID: ${id}`,
+  );
+
+  if (!ObjectId.isValid(id)) {
+    console.error(
+      `[${new Date().toISOString()}] Invalid candidate ID received: ${id}`,
+    );
+    return res
+      .status(400)
+      .json({ success: false, error: "Invalid candidate ID" });
+  }
+
+  const tempDownloadDir = path.join(
+    __dirname,
+    "..",
+    "temp_downloads_single",
+    `candidate_${id}_${Date.now()}`,
+  );
+  const outputZipPath = path.join(
+    __dirname,
+    "..",
+    "temp_downloads_single",
+    `candidate_${id}_documents.zip`,
+  );
+
+  try {
+    await fsPromises.mkdir(tempDownloadDir, { recursive: true });
+    console.log(
+      `[${new Date().toISOString()}] Created temp directory: ${tempDownloadDir}`,
+    );
+
+    const candidate = await db
+      .collection("candidats")
+      .findOne({ _id: new ObjectId(id) });
+
+    if (!candidate) {
+      console.error(
+        `[${new Date().toISOString()}] Candidate not found for ID: ${id}`,
+      );
+      return res
+        .status(404)
+        .json({ success: false, error: "Candidate not found." });
+    }
+    console.log(
+      `[${new Date().toISOString()}] Found candidate: ${candidate.Nom}`,
+    );
+
+    const documentsToDownload = [];
+    const candidateName = `${candidate.Nom || "Unknown"}_${candidate["Prénom"] || "Candidate"}`;
+
+    if (candidate.originalCvMinioPath) {
+      documentsToDownload.push({
+        bucket: BUCKET_NAME,
+        objectName: candidate.originalCvMinioPath,
+        fileName: `${candidateName}_CV_Original.pdf`,
+      });
+    }
+
+    if (candidate.qualifiedFormPath) {
+      const url = new URL(candidate.qualifiedFormPath);
+      const objectName = url.pathname.split("/").slice(2).join("/");
+      documentsToDownload.push({
+        bucket: "qualified-candidats",
+        objectName: objectName,
+        fileName: `${candidateName}_Questionnaire_Recrutement.pdf`,
+      });
+    }
+
+    if (candidate.evalPdfPath) {
+      const url = new URL(candidate.evalPdfPath);
+      const objectName = url.pathname.split("/").slice(2).join("/");
+      documentsToDownload.push({
+        bucket: "qualified-candidats",
+        objectName: objectName,
+        fileName: `${candidateName}_Evaluation_Corrigee.pdf`,
+      });
+    }
+
+    if (candidate.rapportStagePath) {
+      const url = new URL(candidate.rapportStagePath);
+      const objectName = url.pathname.split("/").slice(2).join("/");
+      const ext = path.extname(objectName) || ".pdf";
+      documentsToDownload.push({
+        bucket: RAPPORT_BUCKET_NAME,
+        objectName: objectName,
+        fileName: `${candidateName}_Rapport_Stage${ext}`,
+      });
+    }
+
+    console.log(
+      `[${new Date().toISOString()}] Documents to download:`,
+      JSON.stringify(documentsToDownload, null, 2),
+    );
+
+    if (documentsToDownload.length === 0) {
+      console.warn(
+        `[${new Date().toISOString()}] No documents found for candidate ID: ${id}`,
+      );
+      return res.status(404).json({
+        success: false,
+        error: "No documents found for this candidate.",
+      });
+    }
+
+    for (const docInfo of documentsToDownload) {
+      const fullPath = path.join(tempDownloadDir, docInfo.fileName);
+      const downloaded = await downloadFileFromMinio(
+        docInfo.bucket,
+        docInfo.objectName,
+        fullPath,
+      );
+      if (!downloaded) {
+        console.warn(
+          `[${new Date().toISOString()}] Skipping missing file: ${docInfo.objectName} in bucket ${docInfo.bucket}`,
+        );
+      }
+    }
+
+    console.log(
+      `[${new Date().toISOString()}] All available documents downloaded locally. Starting zip process...`,
+    );
+    const archive = archiver("zip", { zlib: { level: 9 } });
+    const output = fs.createWriteStream(outputZipPath);
+
+    output.on("close", () => {
+      console.log(
+        `[${new Date().toISOString()}] Zip archive created: ${outputZipPath}. Size: ${archive.pointer()} bytes.`,
+      );
+      res.download(outputZipPath, `${candidateName}_documents.zip`, (err) => {
+        if (err) {
+          console.error(
+            `[${new Date().toISOString()}] Error sending zip file to client:`,
+            err,
+          );
+        } else {
+          console.log(
+            `[${new Date().toISOString()}] Zip file sent successfully to client.`,
+          );
+        }
+        // Cleanup temp files
+        fsPromises
+          .rm(tempDownloadDir, { recursive: true, force: true })
+          .catch((err) =>
+            console.error(`Error removing temp dir: ${err.message}`),
+          );
+        fsPromises
+          .rm(outputZipPath, { force: true })
+          .catch((err) =>
+            console.error(`Error removing zip file: ${err.message}`),
+          );
+      });
+    });
+
+    archive.on("error", (err) => {
+      console.error(`[${new Date().toISOString()}] Archiver error:`, err);
+      throw err;
+    });
+
+    archive.pipe(output);
+    archive.directory(tempDownloadDir, false);
+    await archive.finalize();
+    console.log(`[${new Date().toISOString()}] Finalizing archive.`);
+  } catch (error) {
+    console.error(
+      `[${new Date().toISOString()}] Error in /:id/download-docs for ID ${id}:`,
+      error,
+    );
+    res.status(500).json({
+      success: false,
+      error: "Failed to generate and download documents archive.",
+    });
+    // Ensure cleanup on error
+    fsPromises
+      .rm(tempDownloadDir, { recursive: true, force: true })
+      .catch((err) =>
+        console.error(`Error removing temp dir on error: ${err.message}`),
+      );
+    fsPromises
+      .rm(outputZipPath, { force: true })
+      .catch((err) =>
+        console.error(`Error removing zip file on error: ${err.message}`),
+      );
   }
 });
 

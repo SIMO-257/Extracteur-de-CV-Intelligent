@@ -32,7 +32,7 @@ async function main() {
 
     if (truncate) {
       console.log('🧹 Truncating collection "candidats"...');
-      const result = await collection.deleteMany({});
+      const result = await collection.findMany({});
       console.log(`✅ Deleted ${result.deletedCount} documents`);
     }
 

@@ -15,10 +15,11 @@ const AdminLayout = ({ children }) => {
       <nav className="navbar">
         <ul className="nav-links">
           <li><Link to="/scan">🚀 Scanner CV</Link></li>
+          <li><Link to="/refused">🚫 Refusés</Link></li>
           <li><Link to="/candidates">📋 Candidats</Link></li>
           <li><Link to="/hired">🤝 Embauchés</Link></li>
-          <li><Link to="/refused">🚫 Refusés</Link></li>
           <li><Link to="/liste-depart">📋 Liste Départ</Link></li>
+          <li><Link to="/dashboard">📊 Dashboard</Link></li>
         </ul>
         <div className="navbar-right">
           <button className="deconnexion-btn" onClick={handleLogout}>🚪 Déconnexion</button>

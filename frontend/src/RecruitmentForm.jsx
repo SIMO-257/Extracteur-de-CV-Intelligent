@@ -39,10 +39,11 @@ const RecruitmentForm = () => {
 
       if (!data.success) {
         setAccessError(data.error || "Lien invalide");
-      } else if (data.data.formStatus !== "active") {
+      } else if (data.data.formStatus === "submitted") {
         setAccessError(
-          "Ce formulaire n'est pas encore activé par le recruteur.",
+          "Ce formulaire a déjà été soumis et ne peut pas être rempli à nouveau.",
         );
+        setIsAllowed(false);
       } else {
         setIsAllowed(true);
         setCandidateId(data.data._id);
@@ -125,11 +126,8 @@ const RecruitmentForm = () => {
   if (!isAllowed) {
     return (
       <div className="recruitment-container">
-        <div
-          className="form-card"
-          style={{ textAlign: "center", padding: "50px" }}
-        >
-          <div className="form-header">
+        <div className="recruitment-card" style={{ textAlign: "center" }}>
+          <div className="recruitment-header">
             <span style={{ fontSize: "50px" }}>🛡️</span>
             <h1>Accès Restreint</h1>
             <p>
@@ -181,11 +179,8 @@ const RecruitmentForm = () => {
   if (submitted) {
     return (
       <div className="recruitment-container">
-        <div
-          className="form-card"
-          style={{ textAlign: "center", padding: "80px 50px" }}
-        >
-          <div className="form-header">
+        <div className="recruitment-card" style={{ textAlign: "center" }}>
+          <div className="recruitment-header">
             <span style={{ fontSize: "60px" }}>🎉</span>
             <h1>Merci !</h1>
             <p>Votre candidature a été soumise avec succès.</p>

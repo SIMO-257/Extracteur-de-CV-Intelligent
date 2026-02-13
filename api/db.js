@@ -8,8 +8,8 @@ let db;
 async function connectDB() {
   try {
     await client.connect();
-    db = client.db('cv_analysis'); 
-    console.log('Connected to MongoDB successfully!');
+    db = client.db('cv_analysi'); 
+    console.log(`Connected to MongoDB successfully! Database: ${db.databaseName}`);
     return db;
   } catch (error) {
     console.error('MongoDB connection error:', error);

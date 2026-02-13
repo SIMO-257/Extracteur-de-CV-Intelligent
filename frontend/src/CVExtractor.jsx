@@ -22,6 +22,20 @@ const CVExtractor = () => {
       Ecrit: "",
       Parlé: "",
     },
+    situationFamiliale: "",
+    nbEnfants: "",
+    pourquoiChanger: "",
+    dureePreavis: "",
+    fonctionsMissions: "",
+    ecole: "",
+    anneeDiplome: "",
+    posteSedentaire: "",
+    missionsMaitrisees: "",
+    travailSeulEquipe: "",
+    zoneSapino: "",
+    motorise: "",
+    pretentionsSalariales: "",
+    questionsRemarques: "",
   });
   const [extractionDone, setExtractionDone] = useState(false);
   const [error, setError] = useState(null);
@@ -75,8 +89,7 @@ const CVExtractor = () => {
       const result = await response.json();
 
       if (result.success) {
-        const generatedLink = `http://localhost:9000/cvs/${result.fileName}`;
-        setCvData({ ...result.data, cvLink: generatedLink });
+        setCvData({ ...result.data, originalCvMinioPath: result.cvUrl });
         setExtractionDone(true);
         setError(null);
       } else {
@@ -103,7 +116,7 @@ const CVExtractor = () => {
     // Validation: Check for empty fields
     const emptyFields = Object.entries(cvData)
       .filter(([key, value]) => {
-        if (key === "cvLink") return false;
+        if (key === "originalCvMinioPath") return false;
         if (key === "Votre niveau de l'anglais technique") {
           // For the English object, check if all sub-fields are present
           return (
@@ -150,6 +163,20 @@ const CVExtractor = () => {
           "Salaire net Actuel": "",
           "Votre dernier diplome": "",
           "Votre niveau de l'anglais technique": "",
+          situationFamiliale: "",
+          nbEnfants: "",
+          pourquoiChanger: "",
+          dureePreavis: "",
+          fonctionsMissions: "",
+          ecole: "",
+          anneeDiplome: "",
+          posteSedentaire: "",
+          missionsMaitrisees: "",
+          travailSeulEquipe: "",
+          zoneSapino: "",
+          motorise: "",
+          pretentionsSalariales: "",
+          questionsRemarques: "",
         });
       } else {
         setError(result.error || "Erreur lors de l'enregistrement");
@@ -177,6 +204,20 @@ const CVExtractor = () => {
       "Salaire net Actuel": "",
       "Votre dernier diplome": "",
       "Votre niveau de l'anglais technique": "",
+      situationFamiliale: "",
+      nbEnfants: "",
+      pourquoiChanger: "",
+      dureePreavis: "",
+      fonctionsMissions: "",
+      ecole: "",
+      anneeDiplome: "",
+      posteSedentaire: "",
+      missionsMaitrisees: "",
+      travailSeulEquipe: "",
+      zoneSapino: "",
+      motorise: "",
+      pretentionsSalariales: "",
+      questionsRemarques: "",
     });
   };
 
@@ -191,6 +232,20 @@ const CVExtractor = () => {
     "Salaire net Actuel": "Salaire net actuel",
     "Votre dernier diplome": "Dernier diplôme",
     "Votre niveau de l'anglais technique": "Niveau d'anglais technique",
+    situationFamiliale: "Situation familiale",
+    nbEnfants: "Nombre d'enfants",
+    pourquoiChanger: "Pourquoi changer?",
+    dureePreavis: "Durée du préavis",
+    fonctionsMissions: "Fonctions et missions",
+    ecole: "École / Université",
+    anneeDiplome: "Année diplôme",
+    posteSedentaire: "Poste sédentaire",
+    missionsMaitrisees: "Missions maîtrisées",
+    travailSeulEquipe: "Travail seul/équipe",
+    zoneSapino: "Zone Sapino",
+    motorise: "Motorisé(e)",
+    pretentionsSalariales: "Prétentions salariales",
+    questionsRemarques: "Questions/Remarques",
   };
 
   const fieldIcons = {
@@ -204,6 +259,20 @@ const CVExtractor = () => {
     "Salaire net Actuel": "💰",
     "Votre dernier diplome": "🎓",
     "Votre niveau de l'anglais technique": "🌐",
+    situationFamiliale: "👥",
+    nbEnfants: "👶",
+    pourquoiChanger: "❓",
+    dureePreavis: "⏳",
+    fonctionsMissions: "📝",
+    ecole: "🏫",
+    anneeDiplome: "📅",
+    posteSedentaire: "🪑",
+    missionsMaitrisees: "💪",
+    travailSeulEquipe: "🤝",
+    zoneSapino: "📍",
+    motorise: "🚗",
+    pretentionsSalariales: "💵",
+    questionsRemarques: "💬",
   };
 
   /* Form Actions - Add View Candidates button */
@@ -218,7 +287,7 @@ const CVExtractor = () => {
           <div className="header">
             <h1>📄 Extracteur de CV Intelligent</h1>
             <p>Extraction automatisée d'informations à partir de CV PDF</p>
-                        {!ollamaStatus && (
+            {!ollamaStatus && (
               <div className="warning-banner">
                 ⚠️ Ollama n'est pas en cours d'exécution
               </div>
@@ -273,7 +342,10 @@ const CVExtractor = () => {
 
               <div className="form-grid">
                 {Object.entries(cvData)
-                  .filter(([field]) => field !== "cvLink" && fieldLabels[field]) // Filter out technical fields and ensure label exists
+                  .filter(
+                    ([field]) =>
+                      field !== "originalCvMinioPath" && fieldLabels[field],
+                  ) // Filter out technical fields and ensure label exists
                   .map(([field, value]) => (
                     <div key={field} className="form-group">
                       <label htmlFor={field} className="form-label">

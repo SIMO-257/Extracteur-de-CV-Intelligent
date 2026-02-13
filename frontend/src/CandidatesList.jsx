@@ -3,7 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import "./styles/CVExtractor.css"; // Reusing existing styles for consistency
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
-const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || "http://localhost:5173";
+const FRONTEND_URL =
+  import.meta.env.VITE_FRONTEND_URL || "http://localhost:5173";
 
 function normalizeId(id) {
   if (typeof id === "string") return id;
@@ -98,14 +99,14 @@ const CandidatesList = () => {
       if (data.success) {
         const updatedCandidate = data.data;
         setCandidates((prev) =>
-          prev.map((c) =>
-            normalizeId(c._id) === _id ? updatedCandidate : c,
-          ),
+          prev.map((c) => (normalizeId(c._id) === _id ? updatedCandidate : c)),
         );
         const link = `${FRONTEND_URL}/form/${updatedCandidate.formToken}`;
         try {
           await navigator.clipboard.writeText(link);
-          alert(`🚀 Formulaire activé. Lien copié dans le presse‑papier :\n\n${link}`);
+          alert(
+            `🚀 Formulaire activé. Lien copié dans le presse‑papier :\n\n${link}`,
+          );
           // Open the form in a new tab so the admin stays on the list page
           window.open(link, "_blank");
         } catch {
@@ -156,6 +157,43 @@ const CandidatesList = () => {
     }
   };
 
+  const [generatedFormLink, setGeneratedFormLink] = useState(null);
+
+  const handleGenerateFormLink = async () => {
+    setLoading(true);
+    setError(null);
+    setGeneratedFormLink(null); // Clear previous link
+
+    try {
+      const response = await fetch(`${API_URL}/api/cv/generate-form-link`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          /* No initial data needed for just generating a link */
+        }),
+      });
+      const data = await response.json();
+
+      if (data.success) {
+        // Construct the link for CandidateDetailsForm, which takes a token
+        const link = `${FRONTEND_URL}/create-candidate/${data.formToken}`; // Use /create-candidate with the token
+        setGeneratedFormLink(link);
+        await navigator.clipboard.writeText(link);
+        alert(
+          `🚀 Lien du formulaire candidat généré et copié dans le presse-papier :\n\n${link}`,
+        );
+        await fetchCandidates(); // Refresh the candidate list to show the new entry
+      } else {
+        setError(data.error || "Failed to generate form link.");
+      }
+    } catch (err) {
+      console.error("Error generating form link:", err);
+      setError("Error connecting to server to generate link.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading) return <div className="loading-spinner">Loading...</div>;
 
   // Filter candidates: Show only those NOT Refusé and NOT Embaucé
@@ -171,10 +209,55 @@ const CandidatesList = () => {
       >
         <div
           className="header"
-          style={{ marginBottom: "2rem", flexWrap: "wrap" }}
+          style={{
+            marginBottom: "2rem",
+            flexWrap: "wrap",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
         >
           <h1>👥 Liste des Candidats</h1>
+          <button
+            onClick={handleGenerateFormLink}
+            className="extract-button"
+            style={{ fontSize: "1rem", padding: "10px 20px" }}
+          >
+            ➕ Ajouter Candidat (Lien Candidat)
+          </button>
         </div>
+
+        {generatedFormLink && (
+          <div className="generated-link-container">
+            <p>
+              Lien du formulaire candidat :{" "}
+              <a
+                href={generatedFormLink}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {generatedFormLink}
+              </a>
+            </p>
+            <button
+              onClick={() =>
+                navigator.clipboard
+                  .writeText(generatedFormLink)
+                  .then(() => alert("Lien copié !"))
+              }
+              style={{
+                background: "#00796b",
+                color: "white",
+                border: "none",
+                padding: "8px 15px",
+                borderRadius: "5px",
+                cursor: "pointer",
+                fontSize: "0.9rem",
+              }}
+            >
+              📋 Copier
+            </button>
+          </div>
+        )}
 
         {error && <div className="error-message">{error}</div>}
 
@@ -231,8 +314,12 @@ const CandidatesList = () => {
                     );
                   } else {
                     // Fallback for legacy string data or when it's not an object
-                    const englishValue = candidate["Votre niveau de l'anglais technique"];
-                    if (typeof englishValue === "object" && englishValue !== null) {
+                    const englishValue =
+                      candidate["Votre niveau de l'anglais technique"];
+                    if (
+                      typeof englishValue === "object" &&
+                      englishValue !== null
+                    ) {
                       // If it's an object but we didn't catch it above, display as JSON string
                       englishDisplay = (
                         <span className="badge">
@@ -242,9 +329,7 @@ const CandidatesList = () => {
                     } else {
                       // Normal string fallback
                       englishDisplay = (
-                        <span className="badge">
-                          {englishValue || "-"}
-                        </span>
+                        <span className="badge">{englishValue || "-"}</span>
                       );
                     }
                   }
@@ -252,18 +337,59 @@ const CandidatesList = () => {
                   return (
                     <tr key={candidate._id}>
                       <td style={{ fontWeight: 600 }}>
-                        {candidate.Nom || "-"}
+                        {candidate.Nom ||
+                          (candidate.hiringStatus === "Attente formulaire"
+                            ? "En attente"
+                            : "-")}
                       </td>
                       <td style={{ fontWeight: 600 }}>
-                        {candidate["Prénom"] || "-"}
+                        {candidate["Prénom"] ||
+                          (candidate.hiringStatus === "Attente formulaire"
+                            ? "En attente"
+                            : "-")}
                       </td>
-                      <td>{candidate["Date de naissance"] || "-"}</td>
-                      <td>{candidate["Adress Actuel"] || "-"}</td>
-                      <td>{candidate["Post Actuel"] || "-"}</td>
-                      <td>{candidate["Société"] || "-"}</td>
-                      <td>{candidate["Date d'embauche"] || "-"}</td>
-                      <td>{candidate["Salaire net Actuel"] || "-"}</td>
-                      <td>{candidate["Votre dernier diplome"] || "-"}</td>
+                      <td>
+                        {candidate["Date de naissance"] ||
+                          (candidate.hiringStatus === "Attente formulaire"
+                            ? "En attente"
+                            : "-")}
+                      </td>
+                      <td>
+                        {candidate["Adress Actuel"] ||
+                          (candidate.hiringStatus === "Attente formulaire"
+                            ? "En attente"
+                            : "-")}
+                      </td>
+                      <td>
+                        {candidate["Post Actuel"] ||
+                          (candidate.hiringStatus === "Attente formulaire"
+                            ? "En attente"
+                            : "-")}
+                      </td>
+                      <td>
+                        {candidate["Société"] ||
+                          (candidate.hiringStatus === "Attente formulaire"
+                            ? "En attente"
+                            : "-")}
+                      </td>
+                      <td>
+                        {candidate["Date d'embauche"] ||
+                          (candidate.hiringStatus === "Attente formulaire"
+                            ? "En attente"
+                            : "-")}
+                      </td>
+                      <td>
+                        {candidate["Salaire net Actuel"] ||
+                          (candidate.hiringStatus === "Attente formulaire"
+                            ? "En attente"
+                            : "-")}
+                      </td>
+                      <td>
+                        {candidate["Votre dernier diplome"] ||
+                          (candidate.hiringStatus === "Attente formulaire"
+                            ? "En attente"
+                            : "-")}
+                      </td>
                       <td style={{ minWidth: "150px" }}>{englishDisplay}</td>
                       <td style={{ minWidth: "200px" }}>
                         <textarea
@@ -291,10 +417,7 @@ const CandidatesList = () => {
                       </td>
                       <td>
                         <select
-                          value={
-                            candidate.hiringStatus ||
-                            "Attente validation Candidat"
-                          }
+                          value={candidate.hiringStatus || "Attente validation Candidat"}
                           onChange={(e) =>
                             handleHiringStatusChange(
                               candidate._id,
@@ -311,9 +434,9 @@ const CandidatesList = () => {
                         </select>
                       </td>
                       <td>
-                        {candidate.cvLink ? (
+                        {candidate.originalCvMinioPath ? (
                           <a
-                            href={candidate.cvLink}
+                            href={candidate.originalCvMinioPath}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="download-link"

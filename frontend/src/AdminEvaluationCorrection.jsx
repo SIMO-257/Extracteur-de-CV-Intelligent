@@ -127,7 +127,7 @@ const AdminEvaluationCorrection = () => {
     return <div>Aucune évaluation soumise pour ce candidat.</div>;
 
   return (
-    <div className="correction-container">
+    <div className="form-container">
       <header className="correction-header">
         <h1>
           ✍️ Correction Évaluation : {candidate.Prenom} {candidate.Nom}

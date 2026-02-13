@@ -10,6 +10,8 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import AdminLogin from "./AdminLogin";
 import WelcomePage from "./WelcomePage";
 import ListeDépart from "./ListeDépart";
+import DashboardCharts from "./components/DashboardCharts";
+import CandidateDetailsForm from "./CandidateDetailsForm";
 
 export default function QuestionnaireForm() {
   return (
@@ -41,6 +43,7 @@ export default function QuestionnaireForm() {
             </ProtectedRoute>
           }
         />
+        <Route path="/create-candidate/:token" element={<CandidateDetailsForm />} />
         <Route
           path="/refused"
           element={
@@ -70,6 +73,14 @@ export default function QuestionnaireForm() {
           element={
             <ProtectedRoute>
               <AdminEvaluationCorrection />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <DashboardCharts />
             </ProtectedRoute>
           }
         />

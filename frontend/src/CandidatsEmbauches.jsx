@@ -148,6 +148,13 @@ const CandidatsEmbauches = () => {
   };
 
 
+
+  const handleDownloadSingleCandidateDocs = (candidateId) => {
+    alert("Préparation des documents pour le téléchargement. Cela peut prendre un moment...");
+    const _id = normalizeId(candidateId);
+    window.location.href = `${API_URL}/api/cv/${_id}/download-docs`;
+  };
+
   if (loading) return <div className="loading-spinner">Loading...</div>;
 
   return (
@@ -180,13 +187,14 @@ const CandidatsEmbauches = () => {
                 <th>PDF</th>
                 <th>Rapport Stage</th>
                 <th>Date de départ</th>
+                <th>Documents</th>
               </tr>
             </thead>
             <tbody>
               {candidates.length === 0 ? (
                 <tr>
                   <td
-                    colSpan="13"
+                    colSpan="14"
                     style={{ textAlign: "center", padding: "2rem" }}
                   >
                     Aucun candidat embauché
@@ -407,6 +415,15 @@ const CandidatsEmbauches = () => {
                           )
                         }
                       />
+                    </td>
+                    <td>
+                      <button
+                        onClick={() => handleDownloadSingleCandidateDocs(candidate._id)}
+                        className="extract-button"
+                        style={{ background: '#38a169', padding: '8px 12px', fontSize: '0.85rem' }}
+                      >
+                        💾
+                      </button>
                     </td>
                   </tr>
                 ))
